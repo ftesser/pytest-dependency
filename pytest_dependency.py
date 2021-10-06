@@ -191,23 +191,27 @@ def pytest_runtest_setup(item):
             manager.checkDepend(depends, item)
 
 
+
+def extend_items_with_item_dep(item, items):
+    dependencies = list()
+    markers = item.own_markers
+    for marker in markers:
+        depends = marker.kwargs.get("depends")
+        parent = item.parent
+        if marker.name == "dependency" and depends:
+            for depend in depends:
+                dependencies.append((depend, parent))
+
+        for dependency, parent in dependencies:
+            if dependency not in [itemx.name for itemx in items]:
+                new_item = pytest.Function.from_parent(name=dependency, parent=parent)
+                items.insert(0, new_item)
+                extend_items_with_item_dep(new_item, items)
+        return
+
+
 def pytest_collection_modifyitems(config, items):
     _add_dependent = _get_bool(config.getini("add_dependent"))
     if _add_dependent:
-        dependencies = list()
-        items_dict = dict()
         for item in items:
-            markers = item.own_markers
-            items_dict[item.name] = item
-            for marker in markers:
-                depends = marker.kwargs.get("depends")
-                parent = item.parent
-                if marker.name == "dependency" and depends:
-                    for depend in depends:
-                        dependencies.append((depend, parent))
-
-        for dependency, parent in dependencies:
-            if dependency not in list(items_dict.keys()):
-                item = pytest.Function.from_parent(name=dependency, parent=parent)
-                items.insert(0, item)
-                items_dict[dependency] = item
+            extend_items_with_item_dep(item, items)
