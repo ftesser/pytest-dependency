@@ -144,8 +144,8 @@ def pytest_addoption(parser):
                   "Add the dependency marker to all tests automatically", 
                   default=False)
 
-    parser.addini("add_dependent",
-                  "Add the dependent tests ",
+    parser.addini("collect_dependencies",
+                  "Collect the dependent' tests",
                   default=False)
 
     parser.addoption("--ignore-unknown-dependency",
@@ -192,26 +192,26 @@ def pytest_runtest_setup(item):
 
 
 
-def extend_items_with_item_dep(item, items):
+def collect_dependencies(item, items):
     dependencies = list()
     markers = item.own_markers
     for marker in markers:
-        depends = marker.kwargs.get("depends")
+        depends = marker.kwargs.get('depends')
         parent = item.parent
-        if marker.name == "dependency" and depends:
+        if marker.name == 'dependency' and depends:
             for depend in depends:
                 dependencies.append((depend, parent))
 
         for dependency, parent in dependencies:
-            if dependency not in [itemx.name for itemx in items]:
-                new_item = pytest.Function.from_parent(name=dependency, parent=parent)
-                items.insert(0, new_item)
-                extend_items_with_item_dep(new_item, items)
+            if dependency not in [item_i.name for item_i in items]:
+                item_to_add = pytest.Function.from_parent(name=dependency, parent=parent)
+                items.insert(0, item_to_add)
+                # recursive look for dependencies into item_to_add
+                collect_dependencies(item_to_add, items)
         return
 
 
 def pytest_collection_modifyitems(config, items):
-    _add_dependent = _get_bool(config.getini("add_dependent"))
-    if _add_dependent:
+    if _get_bool(config.getini('collect_dependencies')):
         for item in items:
-            extend_items_with_item_dep(item, items)
+            collect_dependencies(item, items)
