@@ -3,9 +3,10 @@
 __version__ = "$VERSION"
 
 import logging
+
+import py
 import pytest
 from _pytest.python import Module
-import py
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ def pytest_addoption(parser):
                   "Collect the dependent' tests",
                   type="bool", default=False)
 
-    parser.addoption("--ignore-unknown-dependency", 
+    parser.addoption("--ignore-unknown-dependency",
                      action="store_true", default=False, 
                      help="ignore dependencies whose outcome is not known")
 
