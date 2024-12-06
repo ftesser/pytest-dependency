@@ -211,6 +211,6 @@ def collect_dependencies(config, item, items):
 
 
 def pytest_collection_modifyitems(config, items):
-    if _get_bool(config.getini('collect_dependencies')):
+    if config.getini('collect_dependencies'):
         for item in items:
             collect_dependencies(config, item, items)

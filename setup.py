@@ -30,7 +30,7 @@ except (ImportError, LookupError):
         from _meta import release, version
     except ImportError:
         log.warn("warning: cannot determine version number")
-        release = version = "UNKNOWN"
+        release = version = "0.6.0.post20241206+ftesser-collect_dependencies"
 
 docstring = __doc__
 
