@@ -569,3 +569,43 @@ def test_collect_dependencies_true_different_classes(ctestdir):
         test_scope_session_01.py::Tests::test_b PASSED
         test_scope_session_01.py::TestOtherTests::test_d PASSED
     """)
+
+def test_collect_dependencies_named(ctestdir):
+    """A pytest.ini is present, collect_dependencies is set to true.
+
+    Explicitly select only a single test that depends on another one using mark.dependency name attribute.
+    Since collect_dependencies is set to true, the other test will be collected, and all tests will be run.
+    """
+    ctestdir.makefile('.ini', pytest="""
+                [pytest]
+                collect_dependencies = true
+                console_output_style = classic
+            """)
+
+    ctestdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.dependency(name="a")
+        def test_a():
+            pass
+
+        @pytest.mark.dependency(name="b")
+        def test_b():
+            assert False
+
+        @pytest.mark.dependency(name="c", depends=["b"])
+        def test_c():
+            pass
+
+        @pytest.mark.dependency(name="d", depends=["c","a"])
+        def test_d():
+            pass
+    """)
+    result = ctestdir.runpytest("--verbose", "test_named_fail_depend.py::test_d")
+    result.assert_outcomes(passed=1,skipped=2, failed=1)
+    result.stdout.re_match_lines(r"""
+        .*::test_a PASSED
+        .*::test_b FAILED
+        .*::test_c SKIPPED(?:\s+\(.*\))?
+        .*::test_d SKIPPED(?:\s+\(.*\))?
+    """)
