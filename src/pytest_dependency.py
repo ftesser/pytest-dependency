@@ -203,7 +203,19 @@ def collect_dependencies(config, item, items):
         for depend_func, depend_nodeid, depend_parent in dependencies:
             list_of_items_nodeid = [item_i.nodeid for item_i in items]
             if depend_nodeid not in list_of_items_nodeid:
-                item_to_add = pytest.Function.from_parent(name=depend_func, parent=depend_parent)
+                # first look if depend_func is the real name of a test function
+                try:
+                    item_to_add = pytest.Function.from_parent(name=depend_func, parent=depend_parent)
+                except AttributeError as e:
+                    # if not, look if depend_func is in the mark.dependency name
+                    for item_i in items:
+                        for marker in item_i.own_markers:
+                            if marker.name == 'dependency' and marker.kwargs.get('name') == depend_func:
+                                item_to_add = item_i
+                                break
+                    else:
+                        logger.warning("The test function {} does not exist".format(depend_func))
+                        continue
                 items.insert(0, item_to_add)
                 # recursive look for dependencies into item_to_add
                 collect_dependencies(config, item_to_add, items)
