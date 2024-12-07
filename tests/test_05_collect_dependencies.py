@@ -601,7 +601,7 @@ def test_collect_dependencies_named(ctestdir):
         def test_d():
             pass
     """)
-    result = ctestdir.runpytest("--verbose", "test_named_fail_depend.py::test_d")
+    result = ctestdir.runpytest("--verbose", "test_collect_dependencies_named.py::test_d")
     result.assert_outcomes(passed=1,skipped=2, failed=1)
     result.stdout.re_match_lines(r"""
         .*::test_a PASSED
