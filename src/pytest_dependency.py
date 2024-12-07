@@ -194,10 +194,28 @@ def collect_dependencies(config, item, items):
                     depend_parent = Module.from_parent(item.parent, fspath=depend_path)
                     depend_nodeid = depend
                 else:
-                    depend_func = depend
-                    depend_parent = item.parent
+                    if item.cls:
+                        # class cases
+                        current_class_name = item.cls.__name__
+                        if "::" not in depend or "{}::".format(current_class_name) in depend:
+                            # the first condition (depend does not contain ::) means that is a "mark.dependency name" or it is in the same class
+                            # the second condition means that test method depends on another test method in the same class
+                            depend_func = depend.split("::")[-1]
+                            depend_parent = item.parent
+                        else:
+                            # test method depends on a test method in another class
+                            depend_func = depend.split("::")[-1]
+                            module = item.parent.parent
+                            for cl in module.collect():
+                                if cl.cls and cl.cls.__name__ == depend.split("::")[0]:
+                                    depend_parent = cl
+                                    break
+                    else:
+                        depend_func = depend
+                        depend_parent = item.parent
                     depend_nodeid = '{}::{}'.format(depend_parent.nodeid, depend_func)
                     # assert depend_nodeid == depend_nodeid2
+                # class example: depend_func = test_b; depend_nodeid = test_class.py::TestClass::test_b; depend_parent = <Class Tests>
                 dependencies.append((depend_func, depend_nodeid, depend_parent))
 
         for depend_func, depend_nodeid, depend_parent in dependencies:
@@ -207,11 +225,12 @@ def collect_dependencies(config, item, items):
                 try:
                     item_to_add = pytest.Function.from_parent(name=depend_func, parent=depend_parent)
                 except AttributeError as e:
+                    logger.warning("collect_dependencies: the test function {}::{} does not exist".format(depend_parent, depend_func))
                     # if not, look if depend_func is in the mark.dependency name
-                    for item_i in items:
-                        for marker in item_i.own_markers:
+                    for item_j in items:
+                        for marker in item_j.own_markers:
                             if marker.name == 'dependency' and marker.kwargs.get('name') == depend_func:
-                                item_to_add = item_i
+                                item_to_add = item_j
                                 break
                     else:
                         logger.warning("The test function {} does not exist".format(depend_func))
@@ -221,7 +240,7 @@ def collect_dependencies(config, item, items):
                 collect_dependencies(config, item_to_add, items)
         return
 
-
+@pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(config, items):
     if config.getini('collect_dependencies'):
         for item in items:

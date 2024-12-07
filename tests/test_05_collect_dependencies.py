@@ -501,3 +501,71 @@ def test_scope_session_collect_dependencies_true_single_test_run_4b(ctestdir):
         test_scope_session_01.py::test_c PASSED
         test_scope_session_02.py::test_e PASSED
     """)
+
+
+
+def test_collect_dependencies_true_single_class(ctestdir):
+    """A pytest.ini is present, collect_dependencies is set to true.
+
+    One module with a single class with two tests, one of them depends on the other.
+    Explicitly select only a single test that depends on another one.
+    Since collect_dependencies is set to true, the other test will be collected, and both tests will be run.
+    """
+    ctestdir.makefile('.ini', pytest="""
+            [pytest]
+            collect_dependencies = true
+            console_output_style = classic
+        """)
+    ctestdir.makepyfile(test_scope_session_01="""
+        import pytest
+
+        class Tests:
+            @pytest.mark.dependency()
+            def test_b(self):
+                pass
+
+            @pytest.mark.dependency(depends=["Tests::test_b"])
+            def test_d(self):
+                pass
+    """)
+
+    result = ctestdir.runpytest("--verbose", "test_scope_session_01.py::Tests::test_d")
+    result.assert_outcomes(passed=2, skipped=0, failed=0)
+    result.stdout.re_match_lines(r"""
+        test_scope_session_01.py::Tests::test_b PASSED
+        test_scope_session_01.py::Tests::test_d PASSED
+    """)
+
+
+def test_collect_dependencies_true_different_classes(ctestdir):
+    """A pytest.ini is present, collect_dependencies is set to true.
+
+       One module with two classes, each with a single test, one of them depends on the other.
+       Explicitly select only a single test that depends on another one.
+       Since collect_dependencies is set to true, the other test will be collected, and both tests will be run.
+       """
+    ctestdir.makefile('.ini', pytest="""
+            [pytest]
+            collect_dependencies = true
+            console_output_style = classic
+        """)
+    ctestdir.makepyfile(test_scope_session_01="""
+        import pytest
+
+        class Tests:
+            @pytest.mark.dependency()
+            def test_b(self):
+                pass
+
+        class TestOtherTests:
+            @pytest.mark.dependency(depends=["Tests::test_b"])
+            def test_d(self):
+                pass
+    """)
+
+    result = ctestdir.runpytest("--verbose", "test_scope_session_01.py::TestOtherTests::test_d")
+    result.assert_outcomes(passed=2, skipped=0, failed=0)
+    result.stdout.re_match_lines(r"""
+        test_scope_session_01.py::Tests::test_b PASSED
+        test_scope_session_01.py::TestOtherTests::test_d PASSED
+    """)
