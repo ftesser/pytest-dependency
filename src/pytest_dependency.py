@@ -136,7 +136,7 @@ def pytest_addoption(parser):
                   type="bool", default=False)
     parser.addini("collect_dependencies",
                   "Collect the dependent' tests",
-                  type="bool", default=True)
+                  type="bool", default=False)
     parser.addoption("--ignore-unknown-dependency",
                      action="store_true", default=False, 
                      help="ignore dependencies whose outcome is not known")
@@ -196,10 +196,15 @@ def collect_dependencies(config, item, items):
         if marker.name == 'dependency' and depends:
             for depend in depends:
                 if scope == 'session' or scope == 'package':
-                    depend_module, depend_func = depend.split("::", 1)
-                    depend_path = py.path.local(Path(config.rootdir) / Path(depend_module))
-                    depend_parent = Module.from_parent(item.parent, fspath=depend_path)
-                    depend_nodeid = depend
+                    if '::' in depend:
+                        depend_module, depend_func = depend.split("::", 1)
+                        depend_path = py.path.local(Path(config.rootdir) / Path(depend_module))
+                        depend_parent = Module.from_parent(item.parent, fspath=depend_path)
+                        depend_nodeid = depend
+                    else:
+                        depend_func = depend
+                        depend_parent = item.parent
+                        depend_nodeid = '{}::{}'.format(depend_parent.nodeid, depend_func)
                 else:
                     if item.cls:
                         # class cases

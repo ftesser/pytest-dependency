@@ -429,8 +429,13 @@ def test_scope_session_collect_dependencies_true_single_test_run_4a(ctestdir):
     """)
 
 
-@pytest.mark.skip(reason="This test requires the pytest-order package")
-def test_scope_session_collect_dependencies_true_single_test_run_4b(ctestdir):
+
+
+@pytest.fixture(scope="session")
+def pytest_order_plugin(request):
+    return pytest.importorskip("pytest_order.plugin", reason="This test requires the pytest-order package")
+
+def test_scope_session_collect_dependencies_true_single_test_run_4b(ctestdir, pytest_order_plugin):
     """Two modules, some cross module dependencies in session scope.
     """
     ctestdir.makefile('.ini', pytest="""
@@ -609,3 +614,6 @@ def test_collect_dependencies_named(ctestdir):
         .*::test_c SKIPPED(?:\s+\(.*\))?
         .*::test_d SKIPPED(?:\s+\(.*\))?
     """)
+
+
+# TODO add parameterized tests
