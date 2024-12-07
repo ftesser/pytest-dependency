@@ -7,6 +7,7 @@ from pathlib import Path
 
 import py
 import pytest
+from _pytest.mark import ParameterSet
 from _pytest.python import Module
 
 logger = logging.getLogger(__name__)
@@ -180,10 +181,16 @@ def pytest_runtest_setup(item):
 
 
 def collect_dependencies(config, item, items):
-    #print("collect_dependencies")
+    marker_list = list()
     dependencies = list()
     markers = item.own_markers
-    for marker in markers:
+    for root_marker in markers:
+        if root_marker.name == 'dependency':
+            marker_list.append(root_marker)
+        elif root_marker.name == 'parametrize':
+            append_parametrized_dependency_markers(root_marker, marker_list)
+
+    for marker in marker_list:
         depends = marker.kwargs.get('depends')
         scope = marker.kwargs.get('scope')
         if marker.name == 'dependency' and depends:
@@ -228,10 +235,10 @@ def collect_dependencies(config, item, items):
             if depend_nodeid not in full_list_of_items_nodeid:
                 found = False
                 # first look if depend_func is the real name of a test function
-                try:
-                    item_to_add = pytest.Function.from_parent(name=depend_func, parent=depend_parent)
+                item_to_add = get_dep_function(depend_func, depend_parent)
+                if item_to_add is not None:
                     found = True
-                except AttributeError as e:
+                else:
                     logger.warning("collect_dependencies: the test function {}::{} does not exist".format(depend_parent, depend_func))
                     # if not, look if depend_func is in the mark.dependency name
                     for item_j in item.parent.collect():
@@ -247,7 +254,23 @@ def collect_dependencies(config, item, items):
                     items.insert(0, item_to_add)
                     # recursive look for dependencies into item_to_add
                     collect_dependencies(config, item_to_add, items)
-        return
+    return
+
+def append_parametrized_dependency_markers(root_marker, marker_list):
+    for arg in root_marker.args:
+        if isinstance(arg, list):
+            for param in arg:
+                if isinstance(param, ParameterSet):
+                    if isinstance(param.marks, tuple):
+                        for mark in param.marks:
+                            if mark.name == 'dependency':
+                                marker_list.append(mark)
+
+def get_dep_function(depend_func, depend_parent):
+    for item in depend_parent.collect():
+        if item.name == depend_func:
+            return item
+
 
 def get_list_of_nodeid_with_dependency_mark_name(items):
     list_of_nodeid = []
