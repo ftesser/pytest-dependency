@@ -23,7 +23,7 @@ class DependencyItemStatus(object):
     Phases = ('setup', 'call', 'teardown')
 
     def __init__(self):
-        self.results = { w:None for w in self.Phases }
+        self.results = {w: None for w in self.Phases}
 
     def __str__(self):
         l = ["%s: %s" % (w, self.results[w]) for w in self.Phases]
@@ -131,14 +131,14 @@ def depends(request, other, scope='module'):
 
 
 def pytest_addoption(parser):
-    parser.addini("automark_dependency", 
-                  "Add the dependency marker to all tests automatically", 
+    parser.addini("automark_dependency",
+                  "Add the dependency marker to all tests automatically",
                   type="bool", default=False)
     parser.addini("collect_dependencies",
                   "Collect the dependent' tests",
                   type="bool", default=False)
     parser.addoption("--ignore-unknown-dependency",
-                     action="store_true", default=False, 
+                     action="store_true", default=False,
                      help="ignore dependencies whose outcome is not known")
 
 
@@ -146,7 +146,7 @@ def pytest_configure(config):
     global _automark, _ignore_unknown
     _automark = config.getini("automark_dependency")
     _ignore_unknown = config.getoption("--ignore-unknown-dependency")
-    config.addinivalue_line("markers", 
+    config.addinivalue_line("markers",
                             "dependency(name=None, depends=[]): "
                             "mark a test to be used as a dependency for "
                             "other tests or to depend on other tests.")
@@ -181,16 +181,73 @@ def pytest_runtest_setup(item):
 
 
 def collect_dependencies(config, item, items):
-    marker_list = list()
-    dependencies = list()
-    markers = item.own_markers
+    dependency_markers = get_dependency_markers(item)
+    dependencies = get_dependencies_from_markers(config, item, dependency_markers)
+
+    for depend_func, depend_nodeid, depend_parent in dependencies:
+        # first look if depend_nodeid is already inside the list of items
+        # this solution use a double list with the two conventions of nodeid (with the real function name and with the name of dependency mark name)
+        # in the future should be better to normalize (using just one convention) the depend_nodeid before to compare
+        list_of_items_nodeid = [item_i.nodeid for item_i in items]  # nodeid with the real function name
+        list_of_items_nodeid_name = get_list_of_nodeid_with_dependency_mark_name(items)  # nodeid with the name of dependency mark name
+        full_list_of_items_nodeid = list_of_items_nodeid + list_of_items_nodeid_name
+        if depend_nodeid not in full_list_of_items_nodeid:
+            found = False
+            # first look if depend_func is the real name of a test function
+            item_to_add = get_dep_function(depend_func, depend_parent)
+            if item_to_add is not None:
+                found = True
+            else:
+                logger.warning("collect_dependencies: the test function {}::{} does not exist".format(depend_parent, depend_func))
+                # if not, look if depend_func is in the mark.dependency name
+                for item_j in item.parent.collect():
+                    if found:
+                        logger.info("The test function {} is in the mark.dependency name".format(depend_func))
+                        break
+                    for marker in item_j.own_markers:
+                        if marker.name == 'dependency' and marker.kwargs.get('name') == depend_func:
+                            item_to_add = item_j
+                            found = True
+                            break
+            if found:
+                items.insert(0, item_to_add)
+                # recursive look for dependencies into item_to_add
+                collect_dependencies(config, item_to_add, items)
+    return
+
+
+def get_dependency_markers(test_item):
+    """Get all the dependency markers of a test item.
+
+    This function looks in both pytest.mark.dependency and pytest.mark.parametrize markers.
+
+    :param test_item: the test item to look for dependency markers.
+    :return: a list of dependency markers.
+    """
+    dependency_markers = list()
+    markers = test_item.own_markers
     for root_marker in markers:
         if root_marker.name == 'dependency':
-            marker_list.append(root_marker)
+            dependency_markers.append(root_marker)
         elif root_marker.name == 'parametrize':
-            append_parametrized_dependency_markers(root_marker, marker_list)
+            append_parametrized_dependency_markers(root_marker, dependency_markers)
+    return dependency_markers
 
-    for marker in marker_list:
+
+def append_parametrized_dependency_markers(root_marker, marker_list):
+    for arg in root_marker.args:
+        if isinstance(arg, list):
+            for param in arg:
+                if isinstance(param, ParameterSet):
+                    if isinstance(param.marks, tuple):
+                        for mark in param.marks:
+                            if mark.name == 'dependency':
+                                marker_list.append(mark)
+
+
+def get_dependencies_from_markers(config, item, dependency_markers):
+    dependencies = list()
+    for marker in dependency_markers:
         depends = marker.kwargs.get('depends')
         scope = marker.kwargs.get('scope')
         if marker.name == 'dependency' and depends:
@@ -229,47 +286,8 @@ def collect_dependencies(config, item, items):
                     # assert depend_nodeid == depend_nodeid2
                 # class example: depend_func = test_b; depend_nodeid = test_class.py::TestClass::test_b; depend_parent = <Class Tests>
                 dependencies.append((depend_func, depend_nodeid, depend_parent))
+    return dependencies
 
-        for depend_func, depend_nodeid, depend_parent in dependencies:
-            # first look if depend_nodeid is already inside the list of items
-            # this solution use a double list with the two conventions of nodeid (with the real function name and with the name of dependency mark name)
-            # in the future should be better to normalize (using just one convention) the depend_nodeid before to compare
-            list_of_items_nodeid = [item_i.nodeid for item_i in items] # nodeid with the real function name
-            list_of_items_nodeid_name = get_list_of_nodeid_with_dependency_mark_name(items) # nodeid with the name of dependency mark name
-            full_list_of_items_nodeid = list_of_items_nodeid + list_of_items_nodeid_name
-            if depend_nodeid not in full_list_of_items_nodeid:
-                found = False
-                # first look if depend_func is the real name of a test function
-                item_to_add = get_dep_function(depend_func, depend_parent)
-                if item_to_add is not None:
-                    found = True
-                else:
-                    logger.warning("collect_dependencies: the test function {}::{} does not exist".format(depend_parent, depend_func))
-                    # if not, look if depend_func is in the mark.dependency name
-                    for item_j in item.parent.collect():
-                        if found:
-                            logger.info("The test function {} is in the mark.dependency name".format(depend_func))
-                            break
-                        for marker in item_j.own_markers:
-                            if marker.name == 'dependency' and marker.kwargs.get('name') == depend_func:
-                                item_to_add = item_j
-                                found = True
-                                break
-                if found:
-                    items.insert(0, item_to_add)
-                    # recursive look for dependencies into item_to_add
-                    collect_dependencies(config, item_to_add, items)
-    return
-
-def append_parametrized_dependency_markers(root_marker, marker_list):
-    for arg in root_marker.args:
-        if isinstance(arg, list):
-            for param in arg:
-                if isinstance(param, ParameterSet):
-                    if isinstance(param.marks, tuple):
-                        for mark in param.marks:
-                            if mark.name == 'dependency':
-                                marker_list.append(mark)
 
 def get_dep_function(depend_func, depend_parent):
     for item in depend_parent.collect():
